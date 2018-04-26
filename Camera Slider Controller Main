@@ -1,0 +1,600 @@
+/***************************************************************************************
+    Name    : The Camera Slider Project
+    Author  : Hannes Tamme
+    Created : June 14, 2017
+    Last Modified: August 23, 2017
+    Slider (Full)Steps from left to right in this case: 4531
+ ***************************************************************************************/
+
+#include <arduino.h>
+#include <TFT.h>      // Arduino TFT library
+#include <SPI.h>      // SPI library
+#include <Encoder.h>  // Libary to use the rotary encoder more efficiently 
+#include "TimerOne.h"
+
+// TFT  pin definitions for the Arduino Uno
+#define LCD_CS   10
+#define DC   9
+#define RESET  8
+// motordriver and limitswitches pin definitions
+#define stepPin 6
+#define dirPin 5
+#define Limitleft 19  // Pin 19 connected to Limit switch left 
+#define Limitright 4  // Pin 4 connected to Limit switch right
+// #define sleep 7     // Hardwired the Sleep Pin to the reset pin of the driver, might change this in a future version
+//joystick, encoder and switch pins
+#define Xaxis A2
+#define Yaxis A3
+#define clicker 15
+#define Enc1 3
+#define enc2 2
+#define timeclicker 18
+#define trigger A0
+//setting up the encoder libary object
+Encoder EncTime(2, 3);
+// create the variable representing the screen
+TFT myscreen = TFT(LCD_CS, DC, RESET);
+
+//defining other global variables
+int menu = 1;
+int sliderlenght = 4531;  //change for different sliders
+int picturecounter;
+
+
+
+int main() {
+  init();
+  //set pinmodes
+  pinMode(stepPin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+  pinMode(Limitleft, INPUT);
+  pinMode(Limitright, INPUT);
+  pinMode(clicker, INPUT_PULLUP);
+  pinMode(Xaxis, INPUT);
+  pinMode(Yaxis, INPUT);
+  pinMode(timeclicker, INPUT_PULLUP);
+  pinMode(trigger, OUTPUT);
+
+  // initialize the screen
+  myscreen.begin();
+  myscreen.background(153, 0, 0);   // make the background black
+  myscreen.setTextSize(2);
+  myscreen.stroke(255, 255, 255);
+
+  //start up sequence
+  myscreen.text("Camera Slider", 0, 0);
+  myscreen.text("Initializing", 0, 18);
+  myscreen.text("V. 2.0", 0, 36);
+  myscreen.text("Hannes Tamme", 0, 100);
+  myscreen.line(0, 95, 160, 95);
+  myscreen.line(0, 94, 160, 94);
+
+  delay(1500);
+  myscreen.background(0, 0, 0);   //using the background function to clear the screen
+
+  //checking slider position and homing
+  myscreen.text("Checking", 0, 0);
+  myscreen.text("Slider", 0, 18);
+  myscreen.text("Position", 0, 36);
+  myscreen.text("and Homing", 0, 54);
+  delay(1000);
+  leftslider(); //left home function
+  myscreen.text("Press the", 0, 0);
+  myscreen.text("Joystick", 0, 18);
+  myscreen.text("to switch", 0, 36);
+  myscreen.text("between", 0, 54);
+  myscreen.text("Control ", 0, 72);
+  myscreen.text("Interfaces", 0, 90);
+  //menu instructions for the user
+
+  //end start up Sequence
+
+  //MAIN MENU------------------------------------------------------------------
+
+
+  while (true) {
+
+    if (!digitalRead(clicker)) {  //  check joystick button
+      delay(200);  // debouncing
+      switch (menu) {
+        case 1:
+          menu = 2;
+
+          myscreen.background(0, 0, 0);
+          myscreen.stroke(255, 255, 255);
+
+          myscreen.text("Fast", 0, 0);
+          myscreen.text("Control Mode", 0, 18);
+          myscreen.line(0, 34, 160, 34);
+          myscreen.line(0, 35, 160, 35);
+          myscreen.text("Turn Knob", 0, 54);
+          myscreen.text("to Change ", 0, 72);
+          myscreen.text("Speed", 0, 90);
+
+          joystickcontrol();
+          break;
+
+        case 2:
+          menu = 3;
+
+          myscreen.background(0, 0, 0);
+          myscreen.stroke(255, 255, 255);
+
+          myscreen.text("Slow", 0, 0);
+          myscreen.text("Control Mode", 0, 18);
+          myscreen.line(0, 34, 160, 34);
+          myscreen.line(0, 35, 160, 35);
+          myscreen.text("Turn Knob", 0, 54);
+          myscreen.text("to Change ", 0, 72);
+          myscreen.text("Speed", 0, 90);
+
+          slowcontrol();
+          break;
+
+        case 3:
+          menu = 1;
+
+          myscreen.background(0, 0, 0);
+          myscreen.stroke(255, 255, 255);
+
+          myscreen.text("Timelapse", 0, 0);
+          myscreen.text("Mode", 0, 18);
+          myscreen.line(0, 34, 160, 34);
+          myscreen.line(0, 35, 160, 35);
+          myscreen.text("Loading...", 0, 54);
+          delay(1000);
+
+          timelapse();
+          break;
+      }
+    }
+  }
+}
+
+
+//slider controloptions organized in seperate functions
+
+//JOYSTICK MODE------------------------------------------------------------------
+
+void joystickcontrol() {
+  int motorspeed;
+  EncTime.write(500);
+
+
+  while (digitalRead(clicker)) {
+    if (analogRead(Xaxis) > 600) {
+
+      if (digitalRead(Limitleft)) {
+        motorspeed = calcspeed();
+
+
+        digitalWrite(dirPin, LOW);
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(motorspeed);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(motorspeed);
+      }
+
+    }
+
+
+    if (analogRead(Xaxis) < 400) {
+
+      if (digitalRead(Limitright)) {
+        motorspeed = calcspeed();
+
+
+        digitalWrite(dirPin, HIGH);
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(motorspeed);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(motorspeed);
+      }
+    }
+  }
+}
+
+//SLOW MODE------------------------------------------------------------------
+
+void slowcontrol() {          //basically the same as the joystick-function but with a much lower speed range
+  int motorspeed;             // this makes both functions more practical
+  EncTime.write(750);
+
+
+  while (digitalRead(clicker)) {
+    if (analogRead(Xaxis) > 600) {
+
+      if (digitalRead(Limitleft)) {
+        motorspeed = calcspeedslow();
+
+        digitalWrite(dirPin, LOW);
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(motorspeed);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(motorspeed);
+      }
+
+    }
+
+
+    if (analogRead(Xaxis) < 400) {
+
+      if (digitalRead(Limitright)) {
+        motorspeed = calcspeedslow();
+
+        digitalWrite(dirPin, HIGH);
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(motorspeed);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(motorspeed);
+      }
+    }
+  }
+
+}
+
+//TIMELAPSE MODE------------------------------------------------------------------
+
+void timelapse() {      //function that asks the user for data and sets up a timelapse
+
+  boolean dir;
+  boolean dist;
+  int runtime;
+  int intervalldelay;
+  int displayintervalldelay;
+  int shutterdelay;
+  int displayshutterspeed;
+  int picnumber;
+  int displayruntime;
+  int ShutterSpeeds[31] = {1, 4, 5, 6, 8, 10, 13, 15, 20, 25, 30, 40, 50, 60, 80, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200};
+  EncTime.write(0);
+  delay(100);
+
+  myscreen.background(0, 0, 0);
+  myscreen.stroke(255, 255, 255);
+
+  myscreen.text("Choose the", 0, 0);
+  myscreen.text("Travel", 0, 18);
+  myscreen.text("Distance", 0, 36);
+  myscreen.text("Press Clicker", 0, 54);
+  myscreen.text("to confirm", 0, 72);
+  myscreen.line(0, 107, 160, 107);
+  myscreen.line(0, 108, 160, 108);
+
+  myscreen.text("Half", 0, 110);
+  myscreen.text("Full", 100, 110);
+
+  while (digitalRead(timeclicker) && digitalRead(clicker)) {
+
+    if (analogRead(Xaxis) > 700) {
+      myscreen.stroke(255, 0, 0);
+      myscreen.text("Half", 0, 110);
+      myscreen.stroke(255, 255, 255);
+      myscreen.text("Full", 100, 110);
+      dist = true;
+    }
+
+    if (analogRead(Xaxis) < 300) {
+      myscreen.stroke(255, 255, 255);
+      myscreen.text("Half", 0, 110);
+      myscreen.stroke(255, 0, 0);
+      myscreen.text("Full", 100, 110);
+      dist = false;
+    }
+
+  }
+
+  myscreen.background(0, 0, 0);
+ myscreen.stroke(255, 255, 255);
+ 
+  myscreen.text("Enter the", 0, 0);
+  myscreen.text("Shutterspeed", 0, 18);
+  myscreen.text("you are using", 0, 36);
+  myscreen.text("Press Clicker", 0, 54);
+  myscreen.text("to confirm", 0, 72);
+  myscreen.line(0, 107, 160, 107);
+  myscreen.line(0, 108, 160, 108);
+
+  while (digitalRead(timeclicker) && digitalRead(clicker)) {
+
+    displayshutterspeed = EncTime.read();
+    displayshutterspeed = constrain(displayshutterspeed, 0, 30);
+    myscreen.text("1/", 0, 110);
+    drawtext(ShutterSpeeds[displayshutterspeed], myscreen, 100);
+    int i = 1 / ShutterSpeeds[displayshutterspeed];
+    shutterdelay = i * 1000;
+  }
+
+  delay(200);
+
+  myscreen.background(0, 0, 0);
+ myscreen.stroke(255, 255, 255);
+ 
+  myscreen.text("Enter the", 0, 0);
+  myscreen.text("Interval in sec", 0, 18);
+  myscreen.text("you are using", 0, 36);
+  myscreen.text("Press Clicker", 0, 54);
+  myscreen.text("to confirm", 0, 72);
+  myscreen.line(0, 107, 160, 107);
+  myscreen.line(0, 108, 160, 108);
+  EncTime.write(0);
+
+  while (digitalRead(timeclicker) && digitalRead(clicker)) {
+
+    int j = shutterdelay / 1000;
+
+    displayintervalldelay = EncTime.read();
+    displayintervalldelay = constrain(displayintervalldelay, j, 20);
+    myscreen.text("Sec.:", 0, 110);
+    drawtext(displayintervalldelay, myscreen, 100);
+
+
+  }
+
+  delay(200);
+
+
+  myscreen.background(0, 0, 0);
+ myscreen.stroke(255, 255, 255);
+ myscreen.text("Startpoint", 0, 0);
+  myscreen.text("Left or Right", 0, 18);
+  myscreen.text("", 0, 36);
+  myscreen.text("Choose via", 0, 54);
+  myscreen.text("the Joystick", 0, 72);
+  myscreen.line(0, 107, 160, 107);
+  myscreen.line(0, 108, 160, 108);
+
+  myscreen.text("Left", 0, 110);
+  myscreen.text("Right", 100, 110);
+
+  while (digitalRead(timeclicker) && digitalRead(clicker)) {
+
+    if (analogRead(Xaxis) > 700) {        //direction right=startpoint left
+      myscreen.stroke(255, 0, 0);
+      myscreen.text("Left", 0, 110);
+      myscreen.stroke(255, 255, 255);
+      myscreen.text("Right", 100, 110);
+      dir = true;
+    }
+
+    if (analogRead(Xaxis) < 300) {          //direction left=startpoint right
+      myscreen.stroke(255, 255, 255);
+      myscreen.text("Left", 0, 110);
+      myscreen.stroke(255, 0, 0);
+      myscreen.text("Right", 100, 110);
+      dir = false;
+    }
+
+  }
+
+  if (dir) {
+    leftslider();
+    runtime = runtimecalc(dist, runtime);
+    intervalldelay = calcdelaynew(displayintervalldelay);
+
+    myscreen.stroke(0, 255, 0);
+    myscreen.text("Timelapse", 0, 0);
+    myscreen.text("is running", 0, 18);
+    myscreen.line(0, 34, 160, 34);
+    myscreen.line(0, 35, 160, 35);
+    myscreen.line(40, 63, 120, 63);         //making an arrow
+    myscreen.line(40, 64, 120, 64);
+    myscreen.line(40, 65, 120, 65);
+    myscreen.line(102, 76, 120, 63);
+    myscreen.line(102, 76, 120, 64);
+    myscreen.line(102, 76, 120, 65);
+    myscreen.line(102, 52, 120, 63);
+    myscreen.line(102, 52, 120, 64);
+    myscreen.line(102, 52, 120, 65);
+    myscreen.line(0, 88, 160, 88);
+    myscreen.line(0, 89, 160, 89);
+    myscreen.text("Steps", 50, 92);
+    myscreen.text("left to go", 0, 110);
+
+    for (int i = runtime; i > 0; i--) {      //using a for instead of a while loop to limit mistakes and to count steps
+      if (digitalRead(Limitright) && digitalRead(clicker)) {
+        digitalWrite(dirPin, HIGH);
+        char e1str[10];
+        itoa(i, e1str, 10);
+        myscreen.text(e1str, 0, 92);
+        digitalWrite(stepPin, HIGH);
+        delay(intervalldelay);
+        digitalWrite(stepPin, LOW);
+        delay(intervalldelay);
+
+        myscreen.stroke(0, 0, 0);
+        myscreen.text(e1str, 0, 92);
+        myscreen.stroke(0, 255, 0);
+
+        shutter(displayshutterspeed);
+      }
+
+
+    }
+  }
+
+  if (!dir) {
+    rightslider();
+    runtime = runtimecalc(dist, runtime);
+    intervalldelay = calcdelaynew(displayintervalldelay);
+    myscreen.stroke(0, 255, 0);
+    myscreen.text("Timelapse", 0, 0);
+    myscreen.text("is running", 0, 18);
+    myscreen.line(0, 34, 160, 34);
+    myscreen.line(0, 35, 160, 35);
+    myscreen.line(40, 63, 120, 63);           //making an arrow
+    myscreen.line(40, 64, 120, 64);
+    myscreen.line(40, 65, 120, 65);
+    myscreen.line(40, 63, 58, 76);
+    myscreen.line(40, 64, 58, 76);
+    myscreen.line(40, 65, 58, 76);
+    myscreen.line(40, 63, 58, 52);
+    myscreen.line(40, 64, 58, 52);
+    myscreen.line(40, 65, 58, 52);
+    myscreen.line(0, 88, 160, 88);
+    myscreen.line(0, 89, 160, 89);
+    myscreen.text("Steps", 50, 92);
+    myscreen.text("left to go", 0, 110);
+
+    for (int i = runtime; i > 0; i--) {
+      if (digitalRead(Limitleft) && digitalRead(clicker)) {
+        digitalWrite(dirPin, LOW);
+        char e1str[10];
+
+        itoa(i, e1str, 10);
+        myscreen.text(e1str, 0, 92);
+        digitalWrite(stepPin, HIGH);
+        delay(intervalldelay);
+        digitalWrite(stepPin, LOW);
+        delay(intervalldelay);
+
+        myscreen.stroke(0, 0, 0);
+        myscreen.text(e1str, 0, 92);
+        myscreen.stroke(0, 255, 0);
+
+
+        shutter(displayshutterspeed);
+
+      }
+
+    }
+  }
+
+}
+
+
+
+
+//other stand alone functions ------------------------------------------------------------------
+
+
+//homing functions left or right for simplicity
+void  leftslider() {
+
+  while (digitalRead(Limitleft)) {
+    digitalWrite(dirPin, LOW);
+    digitalWrite(stepPin, HIGH);
+    delay(1);
+    digitalWrite(stepPin, LOW);
+    delay(1);
+  }
+  myscreen.background(0, 0, 0);
+  myscreen.text("Slider", 0, 0);
+  myscreen.text("reached", 0, 18);
+  myscreen.text("Left", 0, 36);
+  myscreen.text("Position", 0, 54);
+  delay(1500);
+  myscreen.background(0, 0, 0);
+  delay(1);
+}
+
+void  rightslider() {
+
+  while (digitalRead(Limitright)) {
+    digitalWrite(dirPin, HIGH);
+    digitalWrite(stepPin, HIGH);
+    delay(1);
+    digitalWrite(stepPin, LOW);
+    delay(1);
+  }
+  myscreen.background(0, 0, 0);
+  myscreen.text("Slider", 0, 0);
+  myscreen.text("reached", 0, 18);
+  myscreen.text("Right", 0, 36);
+  myscreen.text("Position", 0, 54);
+  delay(1500);
+  myscreen.background(0, 0, 0);
+  delay(1);
+}
+
+
+
+//delay calculation functions ------------------------------------------------------------------
+
+int calcdelaynew(int displayintervalldelay) {
+  int  intervalldelay = displayintervalldelay * 1000;
+  intervalldelay = intervalldelay / 2;
+
+  return intervalldelay;
+}
+
+
+
+int runtimecalc(boolean dist, int runtime) {
+  if (dist) {
+    runtime = sliderlenght / 2;
+
+  }
+  if (dist == false) {
+    runtime = sliderlenght;
+  }
+  return runtime;
+}
+
+int calcspeed() {
+
+  int newspeed = EncTime.read();
+  newspeed = map(newspeed, 0, 800, 600, 2500);
+  newspeed = constrain(newspeed, 600, 2500);
+
+  return newspeed;
+}
+
+int calcspeedslow() {
+
+  int newspeed = EncTime.read();
+  newspeed = map(newspeed, 0, 1500, 5000, 15000);
+  newspeed = constrain(newspeed, 5000, 15000);
+
+  return newspeed;
+}
+
+int shutter(int shutterspeed) {
+  if  (shutterspeed > 10 && shutterspeed < 100) {
+    digitalWrite(trigger, HIGH);
+    delay(110);
+    digitalWrite(trigger, LOW);
+  }
+  if  (shutterspeed < 10) {
+    digitalWrite(trigger, HIGH);
+    delay(1010);
+    digitalWrite(trigger, LOW);
+  }
+  if (shutterspeed > 100) {
+    digitalWrite(trigger, HIGH);
+    delay(50);
+    digitalWrite(trigger, LOW);
+  }
+}
+
+
+//functions for the tft display ------------------------------------------------------------------
+
+
+void drawtext(int e1val, TFT &myscreen, int erase) {      //modified from Graphite_TFT_Text_function.ino by jreus
+  char e1str[10];
+
+  itoa(e1val, e1str, 10);
+  myscreen.text(e1str, 60, 110);
+  delay(erase);
+  // "erase" the text by redrawing it in black
+  myscreen.stroke(0, 0, 0);
+  myscreen.text(e1str, 60, 110);
+  myscreen.stroke(255, 255, 255);
+}
+
+
+
+
+void drawtextfinal(int e1val, TFT &myscreen) {
+  char e1str[10];
+
+  itoa(e1val, e1str, 10);
+  myscreen.text(e1str, 0, 20);
+
+}
+
+
+// ------------------------------------------------------------------
+
+
